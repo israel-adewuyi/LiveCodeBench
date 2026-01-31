@@ -1,12 +1,13 @@
-import json
-import zlib
-import pickle
 import base64
-from enum import Enum
-from datetime import datetime
+import json
+import pickle
+import zlib
 from dataclasses import dataclass
+from datetime import datetime
+from enum import Enum
 
 from datasets import load_dataset
+from huggingface_hub import hf_hub_download
 
 
 class Platform(Enum):
@@ -63,7 +64,7 @@ class CodeGenerationProblem:
 
         try:
             self.private_test_cases = json.loads(self.private_test_cases)  # type: ignore
-        except:
+        except Exception:
             self.private_test_cases = json.loads(
                 pickle.loads(
                     zlib.decompress(
@@ -121,8 +122,66 @@ class CodeGenerationProblem:
         }
 
 
-def load_code_generation_dataset(release_version="release_v1", start_date=None, end_date=None) -> list[CodeGenerationProblem]:
-    dataset = load_dataset("livecodebench/code_generation_lite", split="test", version_tag=release_version, trust_remote_code=True)
+_ALLOWED_FILES = {
+    1: "test.jsonl",
+    2: "test2.jsonl",
+    3: "test3.jsonl",
+    4: "test4.jsonl",
+    5: "test5.jsonl",
+    6: "test6.jsonl",
+}
+
+
+def _parse_version_token(token: str) -> int | None:
+    if token.startswith("v") and token[1:].isdigit():
+        return int(token[1:])
+    return None
+
+
+def _normalize_release_version(release_version: str) -> str:
+    if release_version == "release_latest":
+        return "v6"
+    if release_version.startswith("release_"):
+        return release_version.replace("release_", "", 1)
+    return release_version
+
+
+def _resolve_jsonl_files(release_version: str) -> list[str]:
+    rv = _normalize_release_version(release_version)
+
+    if "_" in rv:
+        start_token, end_token = rv.split("_", 1)
+        start = _parse_version_token(start_token)
+        end = _parse_version_token(end_token)
+        if start is None or end is None:
+            raise ValueError(f"Invalid release_version: {release_version}")
+        if start > end:
+            start, end = end, start
+        return [_ALLOWED_FILES[i] for i in range(start, end + 1)]
+
+    version = _parse_version_token(rv)
+    if version is None:
+        raise ValueError(f"Invalid release_version: {release_version}")
+    return [_ALLOWED_FILES[i] for i in range(1, version + 1)]
+
+
+def _load_code_generation_lite_dataset(release_version: str):
+    jsonl_files = _resolve_jsonl_files(release_version)
+    file_paths = [
+        hf_hub_download(
+            repo_id="livecodebench/code_generation_lite",
+            filename=jsonl_file,
+            repo_type="dataset",
+        )
+        for jsonl_file in jsonl_files
+    ]
+    return load_dataset("json", data_files=file_paths, split="train")
+
+
+def load_code_generation_dataset(
+    release_version="release_v1", start_date=None, end_date=None
+) -> list[CodeGenerationProblem]:
+    dataset = _load_code_generation_lite_dataset(release_version)
     dataset = [CodeGenerationProblem(**p) for p in dataset]  # type: ignore
     if start_date is not None:
         p_start_date = datetime.strptime(start_date, "%Y-%m-%d")
