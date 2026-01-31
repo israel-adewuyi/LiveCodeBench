@@ -57,7 +57,12 @@ class CodeGenerationProblem:
     def __post_init__(self):
         self.platform = Platform(self.platform)
         self.difficulty = Difficulty(self.difficulty)
-        self.contest_date = datetime.fromisoformat(self.contest_date)
+        if isinstance(self.contest_date, datetime):
+            pass
+        elif isinstance(self.contest_date, (int, float)):
+            self.contest_date = datetime.fromtimestamp(self.contest_date)
+        else:
+            self.contest_date = datetime.fromisoformat(str(self.contest_date))
 
         self.public_test_cases = json.loads(self.public_test_cases)  # type: ignore
         self.public_test_cases = [Test(**t) for t in self.public_test_cases]
