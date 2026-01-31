@@ -20,7 +20,6 @@ def main():
     with open(args.custom_output_file, "r") as f:
         custom_outputs = json.load(f)
         assert isinstance(custom_outputs, list)
-        assert len(custom_outputs) == len(benchmark), f"{len(custom_outputs)} != {len(benchmark)}"
         if isinstance(custom_outputs[0], list):
             ## custom outputs must list[list[str]]
             ## list of extracted outputs per question
@@ -41,11 +40,17 @@ def main():
                 isinstance(custom_output, dict) for custom_output in custom_outputs
             )
             if args.scenario in [Scenario.codegeneration, Scenario.selfrepair]:
+                id_to_output = {
+                    str(custom_output["question_id"]): custom_output["code_list"]
+                    for custom_output in custom_outputs
+                }
+                benchmark = [
+                    instance
+                    for instance in benchmark
+                    if str(instance.question_id) in id_to_output
+                ]
                 custom_outputs = [
-                    custom_output["code_list"]
-                    for custom_output in sorted(
-                        custom_outputs, key=lambda x: str(x["question_id"])
-                    )
+                    id_to_output[str(instance.question_id)] for instance in benchmark
                 ]
             elif args.scenario == Scenario.testoutputprediction:
                 custom_outputs = [
@@ -61,6 +66,8 @@ def main():
                         custom_outputs, key=lambda x: int(x.id.split("_")[1])
                     )
                 ]
+        if len(custom_outputs) != len(benchmark):
+            raise AssertionError(f"{len(custom_outputs)} != {len(benchmark)}")
 
     save_results = [
         instance.insert_output(custom_output, custom_output)
